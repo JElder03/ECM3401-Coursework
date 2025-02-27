@@ -11,10 +11,22 @@ from sklearn.model_selection import train_test_split
 from sklearn import metrics
 
 def train(ensemble: RandomForestClassifier|ExtraTreesClassifier, X: list, y: list, labels: list, n_estimators: int = 100) -> RandomForestClassifier|ExtraTreesClassifier:
+    INITIAL_CERTAINTY = 0.95
+    NUM_CLASSES = len(labels)
     K = 0.5 # quartiles of exclusion
+    L = 0.01 # learning rate
     B = 0.02 # sigmoid amplification
 
     batch_size = math.floor(len(y)/n_estimators)
+    y_ordered = np.copy(y)
+    X_ordered = np.copy(X)
+
+    y = np.array(y)
+    p = np.eye(NUM_CLASSES)[y] #OHE
+    p[p == 0] = (1-INITIAL_CERTAINTY)/(NUM_CLASSES-1)
+    p[p == 1] = INITIAL_CERTAINTY
+
+    u = np.array([[inv_sigmoid(probability,B) for probability in probabilities] for probabilities in p], dtype=np.float32)
 
     forest = ensemble(n_estimators=1, criterion='entropy', bootstrap= False, warm_start=True, max_depth = 2, class_weight = {0: 1, 1: 1, 2:1})
 
@@ -35,7 +47,7 @@ def train(ensemble: RandomForestClassifier|ExtraTreesClassifier, X: list, y: lis
 
         forest.fit(X_batch, y_batch)
     
-    for _ in range(1):
+    for _ in range(10):
         forest_prev = forest
 
         forest = ensemble(n_estimators=1, criterion='entropy', bootstrap= False, warm_start=True, max_depth = 2)
@@ -62,7 +74,13 @@ def train(ensemble: RandomForestClassifier|ExtraTreesClassifier, X: list, y: lis
             forest.set_params(n_estimators = i + 1, class_weight = class_weights)
             forest.fit(X_batch, y_batch)
 
-    return forest
+        
+        e = forest.predict_proba(X_ordered)
+        u = update_us(u, e, p, L)
+        p = update_probabilities(u, B)
+        y = update_labels(y_ordered, p)
+        X = np.copy(X_ordered)
+    return forest, y
 
 def select_training_data(X : npt.NDArray[np.float32], y : npt.NDArray[np.float32], e : npt.NDArray[np.float32], K : float) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     
@@ -127,14 +145,20 @@ for _ in range(100):
     for i in range(int(len(y_mislabelled) * MISLABELLING)):
         y_mislabelled[i] = (y_mislabelled[0] + random.randint(1,2)) % len(np.unique(wine.target))
 
-    rf = train(RandomForestClassifier, X_train, y_mislabelled, np.unique(wine.target), 5)
-
+    rf, corrected_y = train(RandomForestClassifier, X_train, y_mislabelled, np.unique(wine.target), 5)
+    
     y_test_pred = rf.predict(X_test)
+
+    print(sum(i!=j for i, j in zip(y_mislabelled, y_train)))
+    print(sum(i!=j for i, j in zip(corrected_y, y_train)))
+    #print([int(i!=j) for i, j in zip(corrected_y, y_train)])
+    mismatch_indices = [index for index, (i, j) in enumerate(zip(corrected_y, y_train)) if i != j]
+    print(mismatch_indices)
 
     scores_my.append(metrics.accuracy_score(y_test, y_test_pred))
 
 
-    rf = RandomForestClassifier(n_estimators=10, criterion='entropy', max_depth = 2)
+    rf = RandomForestClassifier(n_estimators=50, criterion='entropy', max_depth = 2)
     rf.fit(X_train, y_mislabelled)
     y_test_pred = rf.predict(X_test)
     scores_std.append(metrics.accuracy_score(y_test, y_test_pred))
