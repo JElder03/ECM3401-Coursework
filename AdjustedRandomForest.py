@@ -1,52 +1,68 @@
 import math
+import random
 from collections import defaultdict
 import numpy as np
 import numpy.typing as npt
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 
 from sklearn.datasets import make_classification, load_wine
+from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
 from sklearn import metrics
 
 def train(ensemble: RandomForestClassifier|ExtraTreesClassifier, X: list, y: list, labels: list, n_estimators: int = 100) -> RandomForestClassifier|ExtraTreesClassifier:
-    INITIAL_CERTAINTY = 0.95
-    NUM_CLASSES = len(labels)
     K = 0.5 # quartiles of exclusion
-    L = 0.01 # learning rate
     B = 0.02 # sigmoid amplification
 
-    y = np.array(y)
-    p = np.eye(NUM_CLASSES)[y] #OHE
-    p[p == 0] = (1-INITIAL_CERTAINTY)/(NUM_CLASSES-1)
-    p[p == 1] = INITIAL_CERTAINTY
+    batch_size = math.floor(len(y)/n_estimators)
 
-    u = np.array([[inv_sigmoid(probability,B) for probability in probabilities] for probabilities in p], dtype=np.float32)
-
-    forest = ensemble(n_estimators=1, criterion='entropy', warm_start=True, max_depth = 2)
-    
-    x_train = X
-    weights = p
-    #IQR?
+    forest = ensemble(n_estimators=1, criterion='entropy', bootstrap= False, warm_start=True, max_depth = 2, class_weight = {0: 1, 1: 1, 2:1})
 
     for i in range(n_estimators):
-        forest.set_params(n_estimators = i + 1)
+        X, y = shuffle(X, y)
+        X_batch = X[i*batch_size:(i+1)*batch_size]
+        y_batch = y[i*batch_size:(i+1)*batch_size]
 
-        x_train = np.repeat(x_train, NUM_CLASSES, axis=0)
-        y_train = np.array(list(range(NUM_CLASSES)) * len(weights))
-        weights = weights.flatten()
+        missing_labels = set(labels) - set(y_batch)
 
-        forest.fit(x_train, y_train, sample_weight = weights)
+        for label in missing_labels:
+            y_batch = np.append(y_batch,label)
+            X_batch = np.vstack((X_batch, np.zeros((1, X_batch.shape[1]))))  # Stack along axis 0 (rows)
 
-        e = forest.estimators_[-1].predict_proba(X)
-        u = update_us(u, e, p, L)
-        p = update_probabilities(u, B)
-        y = update_labels(y, p)
 
-        selection = select_training_data(X, y, p, K)
-        x_train = [X[i] for i in selection]
-        weights = np.array([p[i] for i in selection])
+        class_weights = {label: 1 for label in set(labels)} | {label: 0 for label in missing_labels}
+        forest.set_params(n_estimators = i + 1, class_weight = class_weights)
 
-    return forest, y
+        forest.fit(X_batch, y_batch)
+    
+    for _ in range(1):
+        forest_prev = forest
+
+        forest = ensemble(n_estimators=1, criterion='entropy', bootstrap= False, warm_start=True, max_depth = 2)
+        X, y = shuffle(X, y)
+
+        for i in range (n_estimators):
+            X_batch = X[i*batch_size:(i+1)*batch_size]
+            y_batch = y[i*batch_size:(i+1)*batch_size]
+
+            e = forest_prev.predict_proba(X_batch)
+
+            selection = select_training_data(X_batch, y_batch, e, K)
+
+            X_batch = [X_batch[i] for i in selection]
+            y_batch = [y_batch[i] for i in selection]
+
+            missing_labels = set(labels) - set(y_batch)
+            for label in missing_labels:
+                y_batch.append(label)
+                X_batch.append([0 for _ in range(len(X_batch[0]))])
+            
+            class_weights = {label: 1 for label in set(labels)} | {label: 0 for label in missing_labels}
+
+            forest.set_params(n_estimators = i + 1, class_weight = class_weights)
+            forest.fit(X_batch, y_batch)
+
+    return forest
 
 def select_training_data(X : npt.NDArray[np.float32], y : npt.NDArray[np.float32], e : npt.NDArray[np.float32], K : float) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
     
@@ -100,27 +116,20 @@ def inv_sigmoid(x, b):
 # MISLABELLING
 scores_my = []
 scores_std = []
-MISLABELLING = 0.05
+MISLABELLING = 0.60
 
-for _ in range(1):
+for _ in range(100):
     wine = load_wine()
-    X_train, X_test, y_train, y_test = train_test_split(wine.data, wine.target, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(wine.data, wine.target)
 
-    #Xs, ys = make_classification(n_samples=100, n_features=5, n_redundant=0, n_informative=3, n_clusters_per_class=1, n_classes=N_CLASSES, flip_y=0, random_state=2)
-    #X_train, X_test, y_train, y_test = train_test_split(Xs, ys, test_size=0.25)
-    
     y_mislabelled = np.copy(y_train)
-    y_mislabelled[0] = (y_mislabelled[0] + 1) % len(np.unique(wine.target))
 
-    rf, corrected_y = train(RandomForestClassifier, X_train, y_mislabelled, np.unique(wine.target), 10)
+    for i in range(int(len(y_mislabelled) * MISLABELLING)):
+        y_mislabelled[i] = (y_mislabelled[0] + random.randint(1,2)) % len(np.unique(wine.target))
+
+    rf = train(RandomForestClassifier, X_train, y_mislabelled, np.unique(wine.target), 5)
 
     y_test_pred = rf.predict(X_test)
-
-    print(sum(i!=j for i, j in zip(y_mislabelled, y_train)))
-    print(sum(i!=j for i, j in zip(corrected_y, y_train)))
-    #print([int(i!=j) for i, j in zip(corrected_y, y_train)])
-    mismatch_indices = [index for index, (i, j) in enumerate(zip(corrected_y, y_train)) if i != j]
-    print(mismatch_indices)
 
     scores_my.append(metrics.accuracy_score(y_test, y_test_pred))
 
@@ -130,6 +139,7 @@ for _ in range(1):
     y_test_pred = rf.predict(X_test)
     scores_std.append(metrics.accuracy_score(y_test, y_test_pred))
 
+# Is accuracy about 50% of data at no mislabelling
 
 print(f"Test\nIndividual Accuracies: {scores_my}\nAverage Accuracy: {np.mean(scores_my)}\n")
 print(f"Control\nIndividual Accuracies: {scores_std}\nAverage Accuracy: {np.mean(scores_std)}")
