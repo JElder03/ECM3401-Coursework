@@ -18,6 +18,7 @@ def train(
     B: float = 0.02,
     initial_certainty: float = 0.95,
     bootstrapping: bool = False,
+    relabelling: bool = True,
 ) -> tuple[RandomForestClassifier | ExtraTreesClassifier, list]:
     """
     Trains an ensemble classifier using a custom reweighting approach and simultaneously relabelled noisy samples.
@@ -33,6 +34,7 @@ def train(
     :param B: Parameter for sigmoid scaling
     :param initial_certainty: Initial certainty of labels
     :param bootstrapping: Enables the bootstrap-based training strategy
+    :param relabelling: Enables the relabelling capability
 
     :return: Trained ensemble model
     :return: Updated label predictions
@@ -122,12 +124,13 @@ def train(
                 forest.set_params(n_estimators=i + 1, class_weight=class_weights)
                 forest.fit(X_batch, y_batch)
 
-        # Update confidence scores, predictions, and labels
-        e = forest.predict_proba(X_ordered)
-        u = update_us(u, e, p, L)
-        p = update_probabilities(u, B)
-        y = update_labels(y_ordered, p)
-        X = np.copy(X_ordered)
+        if relabelling:
+            # Update confidence scores, predictions, and labels
+            e = forest.predict_proba(X_ordered)
+            u = update_us(u, e, p, L)
+            p = update_probabilities(u, B)
+            y = update_labels(y_ordered, p)
+            X = np.copy(X_ordered)
 
     return forest, y
 
@@ -229,97 +232,3 @@ def inv_sigmoid(x, b):
 
     x = max(0.0001, min(0.9999, x))  # Clamp x to avoid out-of-domain errors
     return math.atanh(2 * x - 1) * b
-
-def train2(
-    ensemble: RandomForestClassifier | ExtraTreesClassifier,
-    X: list,
-    y: list,
-    labels: list,
-    n_estimators: int = 5,
-    iterations=10,
-    K: float = 0.5,
-    L: float = 0.01,
-    B: float = 0.02,
-    initial_certainty: float = 0.95,
-) -> tuple[RandomForestClassifier | ExtraTreesClassifier, list]:
-    """
-    Trains an ensemble classifier using a custom reweighting approach and simultaneously relabelled noisy samples.
-
-    :param ensemble: Type of ensemble classifier (RandomForest or ExtraTrees)
-    :param X: Feature set
-    :param y: Labels
-    :param labels: List of possible class labels
-    :param n_estimators: Number of weak classifiers to train
-    :param iterations: Number of iterative training steps
-    :param K: Selection threshold
-    :param L: Learning rate for updating class labels
-    :param B: Parameter for sigmoid scaling
-    :param initial_certainty: Initial certainty of labels
-
-    :return: Trained ensemble model
-    :return: Updated label predictions
-    """
-
-    NUM_CLASSES = len(set(y))
-
-    batch_size = math.floor(len(y) / n_estimators)
-    y_ordered = np.copy(y)
-    X_ordered = np.copy(X)
-
-    # Create probability matrix for sample labels
-    y = np.array(y)
-    p = np.eye(NUM_CLASSES)[y]
-    p[p == 0] = (1 - initial_certainty) / (NUM_CLASSES - 1)
-    p[p == 1] = initial_certainty
-
-    u = np.array(
-        [
-            [inv_sigmoid(probability, B) for probability in probabilities]
-            for probabilities in p
-        ],
-        dtype=np.float32,
-    )
-
-    forest = None
-
-    # Iteratively generate ensembles using knowledge learnt from the previous ensemble
-    for _ in range(iterations):
-        forest_prev = forest
-        
-        forest = ensemble(
-            n_estimators=1, criterion="entropy"
-        )
-        X, y = shuffle(X, y)
-
-        if forest_prev is not None:
-                # Get predicted probabilities from previous iteration
-                e = forest_prev.predict_proba(X)
-
-                # Select training data based on probability confidence
-                selection = select_training_data(X, y, e, K)
-                X_train = [X[i] for i in selection]
-                y_train = [y[i] for i in selection]
-        else:
-            X_train = X
-            y_train = y
-
-        # Ensure all labels exist in the batch
-        missing_labels = set(labels) - set(y_train)
-        for label in missing_labels:
-            y_train = np.append(y_train, label)
-            if np.array(X_train).size == 0:  # Ensure it's properly initialized
-                X_train = np.zeros((1, np.array(X).shape[1]))  
-            else:
-                X_train = np.vstack((X_train, np.zeros((1, np.array(X).shape[1]))))
-
-        forest.set_params(n_estimators=n_estimators, criterion="entropy")
-        forest.fit(X_train, y_train)
-
-        # Update confidence scores, predictions, and labels
-        e = forest.predict_proba(X_ordered)
-        u = update_us(u, e, p, L)
-        p = update_probabilities(u, B)
-        y = update_labels(y_ordered, p)
-        X = np.copy(X_ordered)
-
-    return forest, y
