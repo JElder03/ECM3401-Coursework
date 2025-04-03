@@ -61,14 +61,19 @@ def train(
     forest = None
 
     # Iteratively generate ensembles using knowledge learnt from the previous ensemble
-    for _ in range(iterations):
+    for iter in range(iterations):
         forest_prev = forest
 
         # Reinitialize new ensemble with depth limitation
         forest = ensemble(
             n_estimators=1, criterion="entropy", bootstrap=bootstrapping, warm_start= not bootstrapping
         )
-
+        
+        # Bootstrap final forest
+        if iter == (iterations - 1):
+            bootstrapping = True
+            relabelling = False
+        
         if bootstrapping:
             if forest_prev is not None:
                 e = forest_prev.predict_proba(X)
