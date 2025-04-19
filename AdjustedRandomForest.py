@@ -64,15 +64,15 @@ def train(
     for iter in range(iterations):
         forest_prev = forest
 
-        # Reinitialize new ensemble with depth limitation
-        forest = ensemble(
-            n_estimators=1, criterion="entropy", bootstrap=bootstrapping, warm_start= not bootstrapping
-        )
-        
         # Bootstrap final forest
         if iter == (iterations - 1):
             bootstrapping = True
             relabelling = False
+        
+        # Reinitialize new ensemble with depth limitation
+        forest = ensemble(
+            n_estimators=1, criterion="entropy", bootstrap=bootstrapping, warm_start= not bootstrapping
+        )
         
         if bootstrapping:
             if forest_prev is not None:

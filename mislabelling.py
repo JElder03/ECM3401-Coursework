@@ -1,6 +1,7 @@
 import numpy as np
 import numpy.typing as npt
 import random
+from sklearn.ensemble import RandomForestClassifier
 
 
 def symmetric_noise(
@@ -65,3 +66,43 @@ def pair_noise(y: list[np.float32], p: float|list[float], n_classes: int = None,
             y[i] = pairs[y[i]]
     
     return y
+
+def NNAR(
+    X: npt.NDArray[np.float32],
+    y: list[int],
+    clf: RandomForestClassifier,
+    epsilon: float = 1.0,
+) -> npt.NDArray[np.int_]:
+    """
+    Adds feature-dependent label noise (NNAR) based on the class posterior outputs
+    of a provided scikit-learn Random Forest classifier.
+
+    :param X: The feature matrix (n_samples, n_features)
+    :param y: The clean label list (length n_samples)
+    :param clf: A trained scikit-learn RandomForestClassifier that outputs posteriors
+    :param epsilon: Global noise scaling parameter (higher = more noise)
+    :return: A numpy array of noisy labels
+    """
+    X = np.array(X)
+    y = np.array(y)
+    noisy_y = y.copy()
+
+    # Get posterior probabilities from the RF
+    posteriors = clf.predict_proba(X)
+
+    for i in range(len(y)):
+        true_label = y[i]
+        p_true = posteriors[i][true_label]
+        eta_i = min(1.0, epsilon * (1.0 - p_true))
+
+        if random.random() < eta_i:
+            # Zero out the true label to avoid sampling it
+            probs = posteriors[i].copy()
+            probs[true_label] = 0.0
+            probs /= probs.sum()  # Renormalize
+
+            # Sample a new label from remaining classes
+            new_label = np.random.choice(len(probs), p=probs)
+            noisy_y[i] = new_label
+
+    return noisy_y
