@@ -71,7 +71,7 @@ def train(
         
         # Reinitialize new ensemble with depth limitation
         forest = ensemble(
-            n_estimators=1, criterion="entropy", bootstrap=bootstrapping, warm_start= not bootstrapping
+            n_estimators=1, criterion="entropy", bootstrap=bootstrapping, warm_start= not bootstrapping, max_features= 'sqrt' if bootstrapping else None
         )
         
         if bootstrapping:
