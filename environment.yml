@@ -1,0 +1,46 @@
+name: Dissertation
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12.9
+  - numpy
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - scipy
+  - ipykernel
+  - ipython
+  - jupyter_client
+  - jupyter_core
+  - pip
+  - psutil
+  - pillow
+  - traitlets
+  - pyzmq
+  - tornado
+  - joblib
+  - setuptools
+  - wheel
+  - typing_extensions
+  - six
+  - pytz
+  - packaging
+  - python-dateutil
+  - cycler
+  - pyparsing
+  - kiwisolver
+  - fonttools
+  - decorator
+  - comm
+  - platformdirs
+  - stack_data
+  - prompt-toolkit
+  - pygments
+  - wcwidth
+  - parso
+  - nest-asyncio
+  - executing
+  - pure_eval
+  - jedi
+  - tzdata
