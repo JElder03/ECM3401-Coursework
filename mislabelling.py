@@ -5,7 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 
 def symmetric_noise(
-    y: list[np.float32], p: float, n_classes: int = None
+    y: list[np.float32], p: float, n_classes: int = None, seed: int = None
 ) -> npt.NDArray[np.float32]:
     """
     Adds symmetric noise to a set of labels y
@@ -15,8 +15,12 @@ def symmetric_noise(
     :param n_classes: The number of classes in the dataset. If None, the number is set to the number of
                       unique labels. Note this can be different to the actual number of classes for
                       open-set mislabelling.
+    :param seed: An optional random seed
     :return: The labels y with added noise
     """
+    if seed:
+        np.random.seed(seed)
+        random.seed(seed)
 
     if n_classes is None:
         n_classes = len(set(y))
@@ -28,7 +32,7 @@ def symmetric_noise(
     
     return y
 
-def pair_noise(y: list[np.float32], p: float|list[float], n_classes: int = None, unique_pairs : bool = False) -> npt.NDArray[np.float32]:
+def pair_noise(y: list[np.float32], p: float|list[float], n_classes: int = None, unique_pairs : bool = False, seed: int = None) -> npt.NDArray[np.float32]:
     """
     Adds pair noise to a set of labels y with uniform probability of mislabelling
 
@@ -38,8 +42,14 @@ def pair_noise(y: list[np.float32], p: float|list[float], n_classes: int = None,
                       unique labels. Note this can be different to the actual number of classes for
                       open-set mislabelling.
     :param unique_pairs: Toggle for allowing multiple labels to map to the same label
+    :param seed: An optional random seed
+    
     :return: The labels y with added noise
     """
+
+    if seed:
+        np.random.seed(seed)
+        random.seed(seed)
 
     if n_classes is None:
         n_classes = len(set(y))
@@ -72,6 +82,7 @@ def NNAR(
     y: list[int],
     clf: RandomForestClassifier,
     epsilon: float = 1.0,
+    seed: int = None
 ) -> npt.NDArray[np.int_]:
     """
     Adds feature-dependent label noise (NNAR) based on the class posterior outputs
@@ -81,8 +92,14 @@ def NNAR(
     :param y: The clean label list (length n_samples)
     :param clf: A trained scikit-learn RandomForestClassifier that outputs posteriors
     :param epsilon: Global noise scaling parameter (higher = more noise)
+    :param seed: An optional random seed
+
     :return: A numpy array of noisy labels
     """
+    if seed:
+        np.random.seed(seed)
+        random.seed(seed)
+
     X = np.array(X)
     y = np.array(y)
     noisy_y = y.copy()

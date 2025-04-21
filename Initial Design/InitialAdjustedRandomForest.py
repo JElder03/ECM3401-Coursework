@@ -4,7 +4,7 @@ import numpy as np
 import numpy.typing as npt
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 
-def train(ensemble: RandomForestClassifier|ExtraTreesClassifier, X: list, y: list, labels: list, n_estimators: int = 100, initial_certainty = 0.95, K = 0.5, L = 0.01, B = 0.02, relabelling = True, bootstrap = True, relabel_bunch = 1) -> RandomForestClassifier|ExtraTreesClassifier:
+def train(ensemble: RandomForestClassifier|ExtraTreesClassifier, X: list, y: list, labels: list, n_estimators: int = 100, initial_certainty = 0.95, K = 0.5, L = 0.01, B = 0.02, relabelling = True, bootstrap = True, relabel_bunch = 1, seed = None) -> RandomForestClassifier|ExtraTreesClassifier:
     NUM_CLASSES = len(labels)
 
     y = np.array(y)
@@ -13,8 +13,7 @@ def train(ensemble: RandomForestClassifier|ExtraTreesClassifier, X: list, y: lis
     p[p == 1] = initial_certainty
 
     u = np.array([[inv_sigmoid(probability,B) for probability in probabilities] for probabilities in p], dtype=np.float32)
-    
-    forest = ensemble(n_estimators=1, criterion='entropy', warm_start=True, max_depth = 2, bootstrap = bootstrap)
+    forest = ensemble(n_estimators=1, criterion='entropy', warm_start=True, max_depth = 3, bootstrap = bootstrap, random_state = seed)
     
     x_train = np.copy(X)
     weights = np.copy(p)

@@ -44,7 +44,8 @@ def run_relabelling_experiment(
     K = 0.5,
     L = 0.01,
     bootstrap = True,
-    relabel_bunch = 1
+    relabel_bunch = 1,
+    seed = 42
 ):
     """
     Runs relabelling experiments over multiple trials and noise levels.
@@ -77,14 +78,14 @@ def run_relabelling_experiment(
     for i, noise_rate in enumerate(noise_levels):
         for trial in range(trials):
             X_train, X_test, y_train, y_test = train_test_split(
-                dataset.data, dataset.target, test_size=test_size
+                dataset.data, dataset.target, test_size=test_size, random_state = seed + trial
             )
 
-            y_mislabelled = noise_func(np.copy(y_train), noise_rate)
+            y_mislabelled = noise_func(np.copy(y_train), noise_rate, seed = seed + trial)
 
             # Method 0: standard relabelling
             if ("standard") in methods:
-                rf, corrected_y, _ = train(forest_class, X_train, y_mislabelled, np.unique(dataset.target), n_estimators=n_estimators, relabelling=relabelling, initial_certainty=initial_certainty, K = K, L = L, bootstrap=bootstrap, relabel_bunch=relabel_bunch)
+                rf, corrected_y, _ = train(forest_class, X_train, y_mislabelled, np.unique(dataset.target), n_estimators=n_estimators, relabelling=relabelling, initial_certainty=initial_certainty, K = K, L = L, bootstrap=bootstrap, relabel_bunch=relabel_bunch, seed = seed)
                 y_pred = rf.predict(X_test)
                 relabelling_f1_all[0, i, trial], relabelling_acc_all[0, i, trial] = relabelling_f1(y_train, y_mislabelled, corrected_y)
                 accuracies_all[0, i, trial] = metrics.accuracy_score(y_test, y_pred)
