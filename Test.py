@@ -131,7 +131,7 @@ def slice_prediction(
     Returns:
         A (n_samples, n_classes) array of averaged class probabilities.
     '''
-
+    
     e = np.zeros((len(X), len(forest.classes_)))
     for tree in forest.estimators_[-t:]:
         e += tree.predict_proba(X)

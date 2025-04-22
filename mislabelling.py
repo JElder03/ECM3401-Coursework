@@ -96,6 +96,7 @@ def NNAR(
 
     :return: A numpy array of noisy labels
     """
+    
     if seed:
         np.random.seed(seed)
         random.seed(seed)
