@@ -19,6 +19,8 @@ def train(
     initial_certainty: float = 0.95,
     bootstrapping: bool = False,
     relabelling: bool = True,
+    labels: npt.NDArray[np.int32] = None,
+    max_features = 'sqrt'
 ) -> tuple[RandomForestClassifier | ExtraTreesClassifier, npt.NDArray[np.int32]]:
     """
     Trains an ensemble classifier using iterative reweighting and optional relabelling.
@@ -39,7 +41,8 @@ def train(
     Returns:
         A trained ensemble model and the final relabelled hard labels.
     """
-    labels = labels = sorted(np.unique(y))
+    if labels is None:
+        labels = sorted(np.unique(y))
     NUM_CLASSES = len(labels)
     batch_size = math.floor(len(y) / n_estimators)
 
@@ -56,7 +59,7 @@ def train(
     u = np.vectorize(inv_sigmoid)(p_ordered, B)
 
     # Instantiate ensemble
-    forest = ensemble(criterion="entropy", bootstrap=False, warm_start=True)
+    forest = ensemble(criterion="entropy", bootstrap=False, warm_start=True, max_features = max_features)
     fitted = False
 
     for iter in range(iterations):

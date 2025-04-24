@@ -67,7 +67,7 @@ def pair_noise(y: list[np.float32], p: float|list[float], n_classes: int = None,
         if unique_pairs:
             labels.discard(pairs[i])
 
-    if type(p) is not list:
+    if isinstance(p, (int, float)):
         p = [p for _ in range(n_classes)]
     
     # Mislabel
@@ -82,7 +82,8 @@ def NNAR(
     y: list[int],
     clf: RandomForestClassifier,
     epsilon: float = 1.0,
-    seed: int = None
+    seed: int = None,
+     min_prob: float = 1e-6  # tiny constant to allow all samples a chance
 ) -> npt.NDArray[np.int_]:
     """
     Adds feature-dependent label noise (NNAR) based on the class posterior outputs
@@ -96,8 +97,8 @@ def NNAR(
 
     :return: A numpy array of noisy labels
     """
-    
-    if seed:
+
+    if seed is not None:
         np.random.seed(seed)
         random.seed(seed)
 
@@ -105,22 +106,25 @@ def NNAR(
     y = np.array(y)
     noisy_y = y.copy()
 
-    # Get posterior probabilities from the RF
     posteriors = clf.predict_proba(X)
+    p_trues = np.array([posteriors[i][y[i]] for i in range(len(y))])
+    uncertainty = 1.0 - p_trues + min_prob  # ensure no zero weights
 
-    for i in range(len(y)):
-        true_label = y[i]
-        p_true = posteriors[i][true_label]
-        eta_i = min(1.0, epsilon * (1.0 - p_true))
+    prob_weights = uncertainty / uncertainty.sum()
+    n_mislabel = int(epsilon * len(y))
+    to_mislabel_indices = np.random.choice(len(y), size=n_mislabel, replace=False, p=prob_weights)
 
-        if random.random() < eta_i:
-            # Zero out the true label to avoid sampling it
-            probs = posteriors[i].copy()
-            probs[true_label] = 0.0
-            probs /= probs.sum()  # Renormalize
-
-            # Sample a new label from remaining classes
-            new_label = np.random.choice(len(probs), p=probs)
-            noisy_y[i] = new_label
+    for i in to_mislabel_indices:
+        probs = posteriors[i].copy()
+        probs[y[i]] = 0.0
+        total = probs.sum()
+        
+        if total == 0.0:
+            # fallback: pick a random label that's not the true label
+            other_labels = [j for j in range(len(probs)) if j != y[i]]
+            noisy_y[i] = np.random.choice(other_labels)
+        else:
+            probs /= total
+            noisy_y[i] = np.random.choice(len(probs), p=probs)
 
     return noisy_y
