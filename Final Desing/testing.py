@@ -27,6 +27,7 @@ def run_noise_level_experiment(
     max_features = 'sqrt',
     noise_ratio = None,
     clf = None,
+    unique_pairs = None,
     seed = 42
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -72,8 +73,11 @@ def run_noise_level_experiment(
             if clf:
                 #NNAR
                 y_mislabelled = noise_func(X_train, np.copy(y_train), clf, noise_rate, seed = seed + trial)
+            elif unique_pairs:
+                y_mislabelled = noise_func(np.copy(y_train), noise_rate * noise_ratio, seed = seed + trial, unique_pairs=unique_pairs)
             else:
                 y_mislabelled = noise_func(np.copy(y_train), noise_rate * noise_ratio, seed = seed + trial)
+
 
             # Method 0: standard relabelling
             rf, y_corrected = train(
@@ -92,7 +96,7 @@ def run_noise_level_experiment(
             y_score = rf.predict_proba(X_test)
 
             accuracies_all[0, i, trial] = metrics.accuracy_score(y_test, y_pred)
-            if len(np.unique(dataset.target)) == 2:
+            if len(np.unique(y_test)) <= 2:
                 auc_all[0, i, trial] = metrics.roc_auc_score(y_test, y_score[:, 1], labels=np.unique(dataset.target))
             else:
                 auc_all[0, i, trial] = metrics.roc_auc_score(y_test, y_score, multi_class='ovr', labels=np.unique(dataset.target))
@@ -123,10 +127,10 @@ def run_noise_level_experiment(
                 y_score = rf.predict_proba(X_test)
 
                 accuracies_all[1, i, trial] = metrics.accuracy_score(y_test, y_pred)
-                if len(np.unique(dataset.target)) == 2:
-                    auc_all[0, i, trial] = metrics.roc_auc_score(y_test, y_score[:, 1], labels=np.unique(dataset.target))
+                if len(np.unique(y_test)) <= 2:
+                    auc_all[1, i, trial] = metrics.roc_auc_score(y_test, y_score[:, 1], labels=np.unique(dataset.target))
                 else:
-                    auc_all[0, i, trial] = metrics.roc_auc_score(y_test, y_score, multi_class='ovr', labels=np.unique(dataset.target))
+                    auc_all[1, i, trial] = metrics.roc_auc_score(y_test, y_score, multi_class='ovr', labels=np.unique(dataset.target))
 
     return accuracies_all, auc_all, relabelling_f1_all, relabelling_acc_all, noise_levels
 
@@ -167,6 +171,7 @@ def run_parameter_sweep_experiment(
 
     n_params = len(param_values)
     accuracies_all = np.zeros((2, n_params, trials))
+    auc_all = np.zeros((2, n_params, trials))
     relabelling_f1_all = np.zeros((1, n_params, trials))
     relabelling_acc_all = np.zeros((1, n_params, trials))
 
@@ -199,6 +204,11 @@ def run_parameter_sweep_experiment(
             y_pred = rf.predict(X_test)
 
             accuracies_all[0, i, trial] = metrics.accuracy_score(y_test, y_pred)
+            y_score = rf.predict_proba(X_test)
+            if len(np.unique(y_test)) <= 2:
+                auc_all[0, i, trial] = metrics.roc_auc_score(y_test, y_score[:, 1], labels=np.unique(dataset.target))
+            else:
+                auc_all[0, i, trial] = metrics.roc_auc_score(y_test, y_score, multi_class='ovr', labels=np.unique(dataset.target))
             relabelling_f1_all[0, i, trial], relabelling_acc_all[0, i, trial] = relabelling_f1(y_train, y_mislabelled, y_corrected)
 
     for trial in range(trials):
@@ -208,8 +218,13 @@ def run_parameter_sweep_experiment(
             rf.fit(X_train, y_mislabelled)
             y_pred = rf.predict(X_test)
             accuracies_all[1, :, trial] = metrics.accuracy_score(y_test, y_pred)
+            y_score = rf.predict_proba(X_test)
+            if len(np.unique(y_test)) <= 2:
+                auc_all[1, :, trial] = metrics.roc_auc_score(y_test, y_score[:, 1], labels=np.unique(dataset.target))
+            else:
+                auc_all[1, :, trial] = metrics.roc_auc_score(y_test, y_score, multi_class='ovr', labels=np.unique(dataset.target))
 
-    return accuracies_all, relabelling_f1_all, relabelling_acc_all, np.array(param_values)
+    return accuracies_all, auc_all, relabelling_f1_all, relabelling_acc_all, np.array(param_values)
 
 
 def run_no_threshold_samples_experiment(
@@ -390,7 +405,7 @@ def plot_with_error_band(x, y_mean, y_se, label, color, linestyle="-", alpha=0.2
     - alpha: float, transparency of the shaded area
     """
     import matplotlib.pyplot as plt
-
+    
     plt.plot(x, y_mean, label=label, color=color, linestyle=linestyle)
     plt.fill_between(
         x,
@@ -400,11 +415,11 @@ def plot_with_error_band(x, y_mean, y_se, label, color, linestyle="-", alpha=0.2
         color=color
     )
 
-def plot_heatmap(matrix, x_axis, y_axis, title, label, x_title, y_title):
+def plot_heatmap(matrix, x_axis, y_axis, label, x_title, y_title):
     iterations_range = x_axis
     n_estimators_range = y_axis
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots()
     cax = ax.imshow(matrix, interpolation='nearest', cmap='viridis', origin='lower')
 
     ax.set_xticks(np.arange(len(n_estimators_range)))
@@ -414,7 +429,6 @@ def plot_heatmap(matrix, x_axis, y_axis, title, label, x_title, y_title):
 
     ax.set_xlabel(x_title)
     ax.set_ylabel(y_title)
-    ax.set_title(title)
 
     cbar = fig.colorbar(cax)
     cbar.set_label(label)
@@ -445,4 +459,3 @@ def load_gmm5 ():
     }
 
     return Bunch(**sklearn_like)
-    
