@@ -45,7 +45,8 @@ def run_relabelling_experiment(
     L = 0.01,
     bootstrap = True,
     relabel_bunch = 1,
-    seed = 42
+    seed = 42,
+    hard = False
 ):
     """
     Runs relabelling experiments over multiple trials and noise levels.
@@ -85,7 +86,11 @@ def run_relabelling_experiment(
 
             # Method 0: standard relabelling
             if ("standard") in methods:
-                rf, corrected_y, _ = train(forest_class, X_train, y_mislabelled, np.unique(dataset.target), n_estimators=n_estimators, relabelling=relabelling, initial_certainty=initial_certainty, K = K, L = L, bootstrap=bootstrap, relabel_bunch=relabel_bunch, seed = seed)
+                if not hard:
+                    rf, corrected_y, _ = train(forest_class, X_train, y_mislabelled, np.unique(dataset.target), n_estimators=n_estimators, relabelling=relabelling, initial_certainty=initial_certainty, K = K, L = L, bootstrap=bootstrap, relabel_bunch=relabel_bunch)
+                else:
+                    rf, corrected_y = hard_train(forest_class, X_train, y_mislabelled, np.unique(dataset.target), n_estimators=n_estimators, relabelling=relabelling, initial_certainty=initial_certainty, K = K, L = L, bootstrap=bootstrap)
+
                 y_pred = rf.predict(X_test)
                 relabelling_f1_all[0, i, trial], relabelling_acc_all[0, i, trial] = relabelling_f1(y_train, y_mislabelled, corrected_y)
                 accuracies_all[0, i, trial] = metrics.accuracy_score(y_test, y_pred)
