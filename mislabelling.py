@@ -32,6 +32,7 @@ def symmetric_noise(
     
     return y
 
+
 def pair_noise(y: list[np.float32], p: float|list[float], n_classes: int = None, unique_pairs : bool = False, seed: int = None) -> npt.NDArray[np.float32]:
     """
     Adds pair noise to a set of labels y with uniform probability of mislabelling
@@ -76,6 +77,7 @@ def pair_noise(y: list[np.float32], p: float|list[float], n_classes: int = None,
             y[i] = pairs[y[i]]
     
     return y
+
 
 def NNAR(
     X: npt.NDArray[np.float32],

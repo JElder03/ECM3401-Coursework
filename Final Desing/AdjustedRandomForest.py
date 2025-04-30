@@ -41,6 +41,7 @@ def train(
     Returns:
         A trained ensemble model and the final relabelled hard labels.
     """
+
     if labels is None:
         labels = sorted(np.unique(y))
     NUM_CLASSES = len(labels)
@@ -184,7 +185,17 @@ def update_us(
     L: float,
 ) -> npt.NDArray[np.float32]:
     """
-    Updates pre-sigmoid confidence values
+    Updates the logits (pre-sigmoid confidence values) based on the difference
+    between ensemble predictions and current soft labels.
+
+    Args:
+        u: Current logits (pre-sigmoid) of shape (n_samples, n_classes).
+        e: Predicted class probabilities from ensemble of shape (n_samples, n_classes).
+        p: Current soft label probabilities of shape (n_samples, n_classes).
+        L: Learning rate for the update step.
+
+    Returns:
+        Updated logits of shape (n_samples, n_classes).
     """
 
     return u + L * (e - p)
@@ -213,7 +224,14 @@ def update_probabilities(u: npt.NDArray[np.float32], B: float) -> npt.NDArray[np
 
 def update_labels(p: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     """
-    Updates labels based on maximum probability.
+    Updates hard labels based on the current soft label probabilities.
+
+    Args:
+        p: A (n_samples, n_classes) matrix of class probabilities.
+
+    Returns:
+        A (n_samples,) array of hard labels, where each label is the index of the
+        class with the highest probability.
     """
 
     return np.argmax(p, axis=1)
@@ -221,7 +239,14 @@ def update_labels(p: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
 
 def sigmoid(x, b):
     """
-    Sigmoid function with scaling parameter.
+    Sigmoid function with a scaling parameter `b` to control steepness.
+
+    Args:
+        x: Input value (float).
+        b: Scaling factor (positive float). Smaller values make the transition sharper.
+
+    Returns:
+        A value in the range (0, 1) representing the sigmoid output.
     """
 
     return (1 + math.tanh(x / b)) / 2
@@ -229,7 +254,18 @@ def sigmoid(x, b):
 
 def inv_sigmoid(x, b):
     """
-    Inverse sigmoid function with scaling parameter.
+    Inverse of the scaled sigmoid function.
+
+    Args:
+        x: A float value in (0, 1) representing a probability.
+        b: Scaling factor used in the original sigmoid.
+
+    Returns:
+        The corresponding pre-sigmoid (logit-like) value.
+
+    Notes:
+        - Clamps `x` to avoid domain errors in atanh (which is only defined on (-1, 1)).
+        - Assumes the original sigmoid was computed as: (1 + tanh(u / b)) / 2.
     """
 
     x = max(0.0001, min(0.9999, x))  # Clamp x to avoid out-of-domain errors

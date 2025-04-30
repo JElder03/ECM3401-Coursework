@@ -1,102 +1,144 @@
 import numpy as np
 from InitialAdjustedRandomForest import train, hard_train
 from sklearn.model_selection import train_test_split
+from sklearn.base import ClassifierMixin
+from sklearn.ensemble import RandomForestClassifier
 from sklearn import metrics
 from scipy.stats import sem
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
+from typing import Callable, Tuple, Sequence,Optional
 
-def plot_with_error_band(x, y_mean, y_se, label, color, linestyle="-", alpha=0.2):
+
+def plot_with_error_band(
+    x: Sequence[float],
+    y_mean: Sequence[float],
+    y_se: Sequence[float],
+    label: str,
+    color: str,
+    linestyle: str = "-",
+    alpha: float = 0.2
+) -> None:
     """
     Plots a line with a shaded error band using mean and standard error.
 
-    Parameters:
-    - x: 1D array-like, x-axis values
-    - y_mean: 1D array-like, mean values
-    - y_se: 1D array-like, standard error values
-    - label: str, label for the plot
-    - color: str, color of the line and fill
-    - linestyle: str, line style ('-', ':', etc.)
-    - alpha: float, transparency of the shaded area
+    Args:
+        x: X-axis values.
+        y_mean: Mean values to plot (e.g., accuracy across trials).
+        y_se: Standard error values for shaded region.
+        label: Label to show in legend.
+        color: Line and fill color.
+        linestyle: Line style (e.g., '-', '--').
+        alpha: Transparency of the shaded band.
     """
-    import matplotlib.pyplot as plt
+    plt.plot(x, y_mean, label=label, color=color, linestyle=linestyle, linewidth=2)
 
-    plt.plot(x, y_mean, label=label, color=color, linestyle=linestyle)
+    # Fill region between mean ± standard error
     plt.fill_between(
         x,
-        y_mean - y_se,
-        y_mean + y_se,
+        np.array(y_mean) - np.array(y_se),
+        np.array(y_mean) + np.array(y_se),
         alpha=alpha,
         color=color
     )
 
+    plt.grid(True, linestyle="--", alpha=0.3)
+    plt.legend()
+
 def run_relabelling_experiment(
     dataset,
-    forest_class,
-    noise_func,
-    n_estimators=10,
-    trials=35,
-    resolution=20,
-    test_size=0.25,
-    methods=("standard", "control"),
-    relabelling = True,
-    initial_certainty = 0.95,
-    K = 0.5,
-    L = 0.01,
-    bootstrap = True,
-    relabel_bunch = 1,
-    seed = 42,
-    hard = False
-):
+    forest_class: type[ClassifierMixin],
+    noise_func: Callable[[np.ndarray, float], np.ndarray],
+    n_estimators: int = 10,
+    trials: int = 35,
+    resolution: int = 20,
+    test_size: float = 0.25,
+    methods: Tuple[str, ...] = ("standard", "control"),
+    relabelling: bool = True,
+    initial_certainty: float = 0.95,
+    K: float = 0.5,
+    L: float = 0.01,
+    bootstrap: bool = True,
+    relabel_bunch: int = 1,
+    seed: int = 42,
+    hard: bool = False
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Runs relabelling experiments over multiple trials and noise levels.
 
-    Parameters:
-    - dataset: sklearn-style object with `.data` and `.target`
-    - forest_class: classifier class (e.g., RandomForestClassifier)
-    - noise_func: callable, applies label noise, takes (y, noise_rate)
-    - n_estimators: number of estimators for standard methods
-    - trials: number of trials per noise level
-    - resolution: number of noise steps (from 0 to 1)
-    - test_size: test set proportion
-    - iterations: number of adjusted RF iterations
-    - methods: tuple of method names (default assumes 3: standard, bootstrapped, control)
-    - relabelling: toggles relabelling capability in the adjusted random forest
+    Args:
+        dataset: Dataset with `.data` and `.target`.
+        forest_class: A classifier class (e.g., RandomForestClassifier).
+        noise_func: Function that applies label noise.
+        n_estimators: Number of estimators for the forest.
+        trials: Number of independent runs per noise level.
+        resolution: Number of noise steps between 0 and 1.
+        test_size: Proportion of data used for testing.
+        methods: Tuple of methods to compare ("standard", "control", etc.).
+        relabelling: Whether to enable relabelling logic.
+        initial_certainty: Soft-label initial confidence.
+        K: Confidence threshold for sample filtering.
+        L: Learning rate for updating logits.
+        bootstrap: Whether to use bootstrapping in training.
+        relabel_bunch: How many estimators per relabelling iteration.
+        seed: Random seed for reproducibility.
+        hard: If True, uses hard_train() instead of soft relabelling.
 
     Returns:
-    - accuracies_all: np.array (n_methods, resolution, trials)
-    - relabelling_all: np.array (2, resolution, trials)  [only first 2 methods apply relabelling]
-    - noise_levels: np.array of noise rates
+        accuracies_all: Accuracy results for each method (n_methods × resolution × trials).
+        relabelling_f1_all: F1 scores for relabelling correctness.
+        relabelling_acc_all: Accuracy of relabelling compared to ground truth.
+        noise_levels: Array of tested noise levels.
     """
-
     n_methods = len(methods)
     accuracies_all = np.zeros((n_methods, resolution, trials))
     relabelling_f1_all = np.zeros((2, resolution, trials))
     relabelling_acc_all = np.zeros((2, resolution, trials))
-
     noise_levels = np.linspace(0, 1, resolution)
 
     for i, noise_rate in enumerate(noise_levels):
         for trial in range(trials):
+            # Split the dataset
             X_train, X_test, y_train, y_test = train_test_split(
-                dataset.data, dataset.target, test_size=test_size, random_state = seed + trial
+                dataset.data, dataset.target,
+                test_size=test_size,
+                random_state=seed + trial
             )
 
-            y_mislabelled = noise_func(np.copy(y_train), noise_rate, seed = seed + trial)
+            # Apply noise to training labels
+            y_mislabelled = noise_func(np.copy(y_train), noise_rate, seed=seed + trial)
 
-            # Method 0: standard relabelling
-            if ("standard") in methods:
+            # Method 0: Adjusted Random Forest with relabelling
+            if "standard" in methods:
                 if not hard:
-                    rf, corrected_y, _ = train(forest_class, X_train, y_mislabelled, np.unique(dataset.target), n_estimators=n_estimators, relabelling=relabelling, initial_certainty=initial_certainty, K = K, L = L, bootstrap=bootstrap, relabel_bunch=relabel_bunch)
+                    rf, corrected_y, _ = train(
+                        forest_class, X_train, y_mislabelled, np.unique(dataset.target),
+                        n_estimators=n_estimators,
+                        relabelling=relabelling,
+                        initial_certainty=initial_certainty,
+                        K=K, L=L,
+                        bootstrap=bootstrap,
+                        relabel_bunch=relabel_bunch
+                    )
                 else:
-                    rf, corrected_y = hard_train(forest_class, X_train, y_mislabelled, np.unique(dataset.target), n_estimators=n_estimators, relabelling=relabelling, initial_certainty=initial_certainty, K = K, L = L, bootstrap=bootstrap)
+                    rf, corrected_y = hard_train(
+                        forest_class, X_train, y_mislabelled, np.unique(dataset.target),
+                        n_estimators=n_estimators,
+                        relabelling=relabelling,
+                        initial_certainty=initial_certainty,
+                        K=K, L=L,
+                        bootstrap=bootstrap
+                    )
 
+                # Evaluate relabelling performance
                 y_pred = rf.predict(X_test)
-                relabelling_f1_all[0, i, trial], relabelling_acc_all[0, i, trial] = relabelling_f1(y_train, y_mislabelled, corrected_y)
+                relabelling_f1_all[0, i, trial], relabelling_acc_all[0, i, trial] = relabelling_f1(
+                    y_train, y_mislabelled, corrected_y
+                )
                 accuracies_all[0, i, trial] = metrics.accuracy_score(y_test, y_pred)
 
-            # Method 1: control (no relabelling, more estimators)
-            if ("control") in methods:
+            # Method 1: Standard classifier with no relabelling (control)
+            if "control" in methods:
                 rf = forest_class(n_estimators=n_estimators, criterion="entropy")
                 rf.fit(X_train, y_mislabelled)
                 y_pred = rf.predict(X_test)
@@ -104,53 +146,76 @@ def run_relabelling_experiment(
 
     return accuracies_all, relabelling_f1_all, relabelling_acc_all, noise_levels
 
-def relabelling_f1(y_true, y_mislabelled, y_corrected):
-    noise_mask = y_mislabelled != y_true  # 1 = label was noisy
-    correct_mask = y_true == y_corrected # 1 = new label is correct
-    change_mask = y_mislabelled != y_corrected # 1 = relabelling occurred
-    relabel_correct = noise_mask & correct_mask # 1 = noisy label was corrected
+from typing import Tuple
+from sklearn import metrics
+import numpy as np
 
-    if noise_mask.sum() == 0 and change_mask.sum() == 0:
-        return 1.0, 1.0  # perfect (no noise, nothing changed)
-    elif noise_mask.sum() == 0:
-        return 0.0, 0.0  # nothing to fix, but changes happened = bad
-    else:
-        return metrics.f1_score(noise_mask, change_mask), sum(relabel_correct)/sum(noise_mask)
-
-def process_experiment_results(
-    accuracies_all,
-    relabelling_f1_all=None,
-    relabelling_acc_all=None,
-    resolution=20,
-    test_size=0.25,
-    dataset_size=None  # total number of samples before train/test split
-):
+def relabelling_f1(
+    y_true: np.ndarray,
+    y_mislabelled: np.ndarray,
+    y_corrected: np.ndarray
+) -> Tuple[float, float]:
     """
-    Processes raw experiment outputs to compute mean & SE for accuracies and relabelling success.
+    Computes F1 score and relabelling accuracy based on how well noisy labels were corrected.
 
-    Parameters:
-    - accuracies_all: array-like (n_methods, resolution, trials)
-    - relabelling_all: array-like (n_methods_relabelling, resolution, trials), optional
-    - resolution: number of noise levels
-    - test_size: test split ratio used during training
-    - dataset_size: total number of original samples (before train/test split)
+    Args:
+        y_true: Ground-truth labels.
+        y_mislabelled: Noisy labels (input to model).
+        y_corrected: Labels after relabelling.
 
     Returns:
-    - accuracies_mean: (n_methods, resolution)
-    - accuracies_se: (n_methods, resolution)
-    - relabelling_success: (n_methods_relabelling, resolution) or None
-    - relabelling_se: (n_methods_relabelling, resolution) or None
-    - noise_levels: (resolution,)
+        F1 score comparing noise vs change masks,
+        Accuracy of corrected noisy samples.
     """
+    noise_mask = y_mislabelled != y_true          # Identify noisy samples
+    correct_mask = y_true == y_corrected          # Samples correctly relabelled
+    change_mask = y_mislabelled != y_corrected    # Samples that were relabelled
+    relabel_correct = noise_mask & correct_mask   # Noisy samples correctly relabelled
 
+    if noise_mask.sum() == 0 and change_mask.sum() == 0:
+        return 1.0, 1.0  # Perfect case, nothing needed, nothing changed
+    elif noise_mask.sum() == 0:
+        return 0.0, 0.0  # No noise but changes occurred — undesirable
+    else:
+        f1 = metrics.f1_score(noise_mask, change_mask)
+        acc = sum(relabel_correct) / (sum(noise_mask) + 1e-8)  # Accuracy over noisy
+        return f1, acc
+
+
+def process_experiment_results(
+    accuracies_all: np.ndarray,
+    relabelling_f1_all: Optional[np.ndarray] = None,
+    relabelling_acc_all: Optional[np.ndarray] = None,
+    resolution: int = 20,
+    test_size: float = 0.25,
+    dataset_size: Optional[int] = None
+) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], np.ndarray]:
+    """
+    Processes raw experimental outputs to compute mean and standard error.
+
+    Args:
+        accuracies_all: Array of shape (n_methods, resolution, trials).
+        relabelling_f1_all: Optional array for relabelling F1 results.
+        relabelling_acc_all: Optional array for relabelling accuracy.
+        resolution: Number of tested noise levels.
+        test_size: Proportion of test set (used for context only).
+        dataset_size: Total sample size before split (unused here, placeholder).
+
+    Returns:
+        Tuple containing:
+            - Mean and SE for accuracy
+            - Mean and SE for relabelling F1 (or None)
+            - Mean and SE for relabelling accuracy (or None)
+            - Noise level grid (np.ndarray)
+    """
+    # Compute mean and SE for accuracy
     accuracies_all = np.array(accuracies_all)
     accuracies_mean = accuracies_all.mean(axis=2)
     accuracies_se = sem(accuracies_all, axis=2)
 
-    relabelling_f1_success = None
-    relabelling_f1_se = None
-    relabelling_acc_success = None
-    relabelling_acc_se = None
+    # Initialize relabelling results
+    relabelling_f1_success = relabelling_f1_se = None
+    relabelling_acc_success = relabelling_acc_se = None
 
     if relabelling_f1_all is not None:
         relabelling_f1_all = np.array(relabelling_f1_all)
@@ -162,47 +227,62 @@ def process_experiment_results(
         relabelling_acc_success = relabelling_acc_all.mean(axis=2)
         relabelling_acc_se = sem(relabelling_acc_all, axis=2)
 
+    # Generate the x-axis of noise levels
     noise_levels = np.linspace(0, 1, resolution)
-    return accuracies_mean, accuracies_se, relabelling_f1_success, relabelling_f1_se, relabelling_acc_success, relabelling_acc_se, noise_levels
+
+    return (
+        accuracies_mean, accuracies_se,
+        relabelling_f1_success, relabelling_f1_se,
+        relabelling_acc_success, relabelling_acc_se,
+        noise_levels
+    )
 
 
-def plot_rf_decision_boundary(rf, X, y, resolution=100, class_index=1, cmap='bwr'):
+def plot_rf_decision_boundary(
+    rf: RandomForestClassifier,
+    X: np.ndarray,
+    y: np.ndarray,
+    resolution: int = 100,
+    class_index: int = 1,
+    cmap: str = 'bwr'
+) -> None:
     """
-    Plots the decision boundary of a trained RandomForestClassifier on 2D data.
+    Visualizes a RandomForest decision boundary on 2D data.
 
-    Parameters:
-    - rf: trained RandomForestClassifier
-    - X: 2D input data, shape (n_samples, 2)
-    - y: labels corresponding to X
-    - resolution: number of grid points along each axis
-    - class_index: index of the class to show the posterior probability for (default: 1)
-    - cmap: colormap to use for the probability shading
+    Args:
+        rf: Trained RandomForestClassifier.
+        X: Feature matrix (2D only), shape (n_samples, 2).
+        y: Labels corresponding to X.
+        resolution: Grid resolution for heatmap.
+        class_index: Which class probability to visualize.
+        cmap: Colormap for contour heatmap.
     """
     if X.shape[1] != 2:
-        raise ValueError("This function only works with 2D input data.")
+        raise ValueError("This function only supports 2D input features.")
 
-    # Define the bounds of the grid
-    x_min, x_max = X[:, 0].min() - X[:, 0].min()*0.1, X[:, 0].max() + X[:, 0].max()*0.1
-    y_min, y_max = X[:, 1].min() - X[:, 1].min()*0.1, X[:, 1].max() + X[:, 1].max()*0.1
+    # Compute bounds of the plot
+    x_min, x_max = X[:, 0].min() * 0.9, X[:, 0].max() * 1.1
+    y_min, y_max = X[:, 1].min() * 0.9, X[:, 1].max() * 1.1
 
-    # Create a grid of points
+    # Create a mesh grid
     xx, yy = np.meshgrid(
         np.linspace(x_min, x_max, resolution),
         np.linspace(y_min, y_max, resolution)
     )
     grid = np.c_[xx.ravel(), yy.ravel()]
 
-    # Get predicted probabilities for each point in the grid
+    # Predict class probabilities for each point in the grid
     probs = rf.predict_proba(grid)[:, class_index]
     probs = probs.reshape(xx.shape)
 
-    # Plot the decision boundary
+    # Create contour plot
     plt.figure(figsize=(8, 6))
     contour = plt.contourf(xx, yy, probs, levels=100, cmap=cmap, alpha=0.7)
     plt.colorbar(contour, label=f'P(class={class_index})')
 
-    # Overlay the original data points
-    plt.scatter(X[:, 0], X[:, 1], c=y, edgecolor='k', cmap=ListedColormap(['#1f77b4', '#ff7f0e']))
+    # Overlay original points
+    plt.scatter(X[:, 0], X[:, 1], c=y, edgecolor='k',
+                cmap=ListedColormap(['#1f77b4', '#ff7f0e']))
     plt.title("Random Forest Decision Boundary")
     plt.xlabel("Feature 1")
     plt.ylabel("Feature 2")

@@ -1,3 +1,8 @@
+'''
+Additional implementations of the adjusted random forest for outputting particular 
+data from training which would not otherwise be provided
+'''
+
 import math
 import copy
 import numpy as np
@@ -6,6 +11,7 @@ from typing import Union
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from sklearn.utils import shuffle
 from AdjustedRandomForest import slice_prediction, update_labels, update_probabilities, update_us, inv_sigmoid, select_training_data
+
 
 def train_output_all_iterations(
     ensemble: Union[type[RandomForestClassifier], type[ExtraTreesClassifier]],
