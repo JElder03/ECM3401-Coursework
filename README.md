@@ -13,14 +13,15 @@ This project develops a novel Random Forest based technique for handling noisy l
 
 ## How to Run
 
-- To reproduce experiments relating to the final training scheme, run the notbooks in `/Final Design/`.
-- To reproduce experiments relating to the initial training scheme, run the notbooks in `/Initial Design/`.
-- To test relabelling algorithms, use `mislabelling.py` directly or via related notebooks.
+- The noise robust random forsest training scheme is in `./Final Design/AdjustedRandomForest.py`.
+- To reproduce experiments relating to the final training scheme, run the notbooks in `./Final Design/`.
+- To reproduce experiments relating to the initial training scheme, run the notbooks in `./Initial Design/`.
+- To test relabelling algorithms, use `./mislabelling.py` directly or via related notebooks.
 Each notebook has a brief description of the experiments it runs
 
 ## Datasets
 
-- Custom Gaussian Mixture Models (`gmm5train.txt`, `gmm5test.txt`)
+- Custom Gaussian Mixture Models (`./Data/gmm5train.txt`, `./Data/gmm5test.txt`)
 - Additional benchmark datasets included in Scikit-learn (breast cancer, digits, and wine)
 
 ---
