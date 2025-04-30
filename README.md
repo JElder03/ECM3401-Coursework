@@ -14,8 +14,8 @@ This project develops a novel Random Forest based technique for handling noisy l
 ## How to Run
 
 - The noise robust random forest training scheme is in `./Final Design/AdjustedRandomForest.py`.
-- To reproduce experiments relating to the final training scheme, run the notbooks in `./Final Design/`.
-- To reproduce experiments relating to the initial training scheme, run the notbooks in `./Initial Design/`.
+- To reproduce experiments relating to the final training scheme, run the notebooks in `./Final Design/`.
+- To reproduce experiments relating to the initial training scheme, run the notebooks in `./Initial Design/`.
 - To test relabelling algorithms, use `./mislabelling.py` directly or via related notebooks.
 Each notebook has a brief description of the experiments it runs
 
